@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Background Remover - Studio Quality</title>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --text: #f8fafc;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(to right, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .upload-box {
+            background: var(--card-bg);
+            border: 2px dashed #475569;
+            border-radius: 1rem;
+            padding: 3rem;
+            margin: 2rem 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .upload-box:hover {
+            border-color: var(--primary);
+            background: #2d3748;
+        }
+
+        #fileInput { display: none; }
+
+        .preview-container {
+            display: none;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        .image-card {
+            background: var(--card-bg);
+            padding: 1rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        img {
+            max-width: 100%;
+            border-radius: 0.5rem;
+            background-image: 
+                linear-gradient(45deg, #2d3748 25%, transparent 25%), 
+                linear-gradient(-45deg, #2d3748 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #2d3748 75%), 
+                linear-gradient(-45deg, transparent 75%, #2d3748 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+
+        .controls {
+            margin-top: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            align-items: center;
+        }
+
+        .download-group {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        .btn:active { transform: scale(0.95); }
+
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-download { background: #10b981; color: white; }
+
+        #status {
+            font-weight: 500;
+            color: #94a3b8;
+            margin: 1rem 0;
+        }
+
+        .loader {
+            width: 48px;
+            height: 48px;
+            border: 5px solid #FFF;
+            border-bottom-color: var(--primary);
+            border-radius: 50%;
+            display: none;
+            margin: 20px auto;
+            animation: rotation 1s linear infinite;
+        }
+
+        @keyframes rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 600px) {
+            .preview-container { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>AI Background Remover</h1>
+        <p>Studio quality removal, right in your browser.</p>
+    </header>
+
+    <div class="upload-box" onclick="document.getElementById('fileInput').click()">
+        <p>Click or Drag to Upload Image</p>
+        <span style="font-size: 0.8rem; color: #94a3b8;">High-res JPG/PNG supported</span>
+        <input type="file" id="fileInput" accept="image/*">
+    </div>
+
+    <div id="loader" class="loader"></div>
+    <div id="status">Ready</div>
+
+    <div class="preview-container" id="previewContainer">
+        <div class="image-card">
+            <p>Original</p>
+            <img id="originalPreview" src="" alt="Original">
+        </div>
+        <div class="image-card">
+            <p>Processed</p>
+            <img id="resultPreview" src="" alt="Result">
+        </div>
+    </div>
+
+    <div class="controls" id="controls" style="display: none;">
+        <h3>Download Options</h3>
+        <div class="download-group">
+            <button class="btn btn-download" onclick="downloadImage('full')">Full Quality (100%)</button>
+            <button class="btn btn-download" onclick="downloadImage('medium')">Medium (50%)</button>
+            <button class="btn btn-download" onclick="downloadImage('low')">Low (25%)</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    // Import the background removal library via ESM CDN
+    import imglyRemoveBackground from 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/+esm';
+
+    const fileInput = document.getElementById('fileInput');
+    const resultPreview = document.getElementById('resultPreview');
+    const originalPreview = document.getElementById('originalPreview');
+    const status = document.getElementById('status');
+    const loader = document.getElementById('loader');
+    const controls = document.getElementById('controls');
+    const previewContainer = document.getElementById('previewContainer');
+
+    let processedBlob = null;
+    let originalFileName = "image-no-bg.png";
+
+    fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        originalFileName = file.name.split('.')[0] + "-no-bg.png";
+        
+        // Show original preview
+        originalPreview.src = URL.createObjectURL(file);
+        previewContainer.style.display = 'grid';
+        
+        // UI State
+        status.innerText = "Initializing AI Models (this may take a few seconds on first run)...";
+        loader.style.display = 'block';
+        controls.style.display = 'none';
+
+        try {
+            // Processing
+            // The library automatically uses the best model available
+            const config = {
+                progress: (item, loaded, total) => {
+                    status.innerText = `Processing: ${Math.round((loaded / total) * 100)}%`;
+                }
+            };
+
+            processedBlob = await imglyRemoveBackground(file, config);
+            
+            // Show result
+            const url = URL.createObjectURL(processedBlob);
+            resultPreview.src = url;
+            
+            status.innerText = "Success! Background Removed.";
+            loader.style.display = 'none';
+            controls.style.display = 'flex';
+        } catch (error) {
+            console.error(error);
+            status.innerText = "Error: " + error.message;
+            loader.style.display = 'none';
+        }
+    });
+
+    window.downloadImage = async (quality) => {
+        if (!processedBlob) return;
+
+        let scale = 1.0;
+        if (quality === 'medium') scale = 0.5;
+        if (quality === 'low') scale = 0.25;
+
+        if (scale === 1.0) {
+            // Direct download for full quality
+            triggerDownload(processedBlob, originalFileName);
+        } else {
+            // Use Canvas to resize for medium/low
+            const img = new Image();
+            img.src = URL.createObjectURL(processedBlob);
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                canvas.width = img.width * scale;
+                canvas.height = img.height * scale;
+                
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                
+                canvas.toBlob((blob) => {
+                    triggerDownload(blob, `(${quality})-${originalFileName}`);
+                }, 'image/png');
+            };
+        }
+    };
+
+    function triggerDownload(blob, name) {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+</script>
+
+</body>
+</html>
